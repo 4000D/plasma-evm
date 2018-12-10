@@ -140,8 +140,8 @@ func TestBlockInvalidExitReceiptsStorage(t *testing.T) {
 	WriteInvalidExitReceiptsLookupEntry(db, hash, 1, 1, []uint64{0, 2})
 
 	iers := ReadInvalidExitReceipts(db, hash, 1, 1)
-	if len(iers) != 2 {
-		t.Fatalf("no invalid exit receipts returned")
+	if iers == nil || len(iers) != 2 {
+		t.Fatalf("invalid invalid exit receipts returned")
 	} else {
 		if (*iers[0]).TxHash != (*receipts[0]).TxHash || (*iers[2]).TxHash != (*receipts[2]).TxHash {
 			t.Fatalf("different receipt: read receipt is %v, saved receipt is %v", *iers[0], *receipts[0])
