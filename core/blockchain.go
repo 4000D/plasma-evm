@@ -18,6 +18,7 @@
 package core
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -591,15 +592,18 @@ func (bc *BlockChain) GetBlock(hash common.Hash, number uint64) *types.Block {
 
 // GetInvalidExitReceipts retrieves invalid exit receipts from the database by hash, number and fork,
 // caching it if found.
-func (bc *BlockChain) GetInvalidExitReceipts(hash common.Hash, number uint64, fork uint64) map[uint64]*types.Receipt {
-	msg := fmt.Sprintf("block hash: %x, block number: %d, fork number: %d", hash, number, fork)
-	key := crypto.Keccak256([]byte(msg))
+func (bc *BlockChain) GetInvalidExitReceipts(fork uint64, num uint64) map[uint64]*types.Receipt {
+	forkBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(forkBytes, fork)
+	numBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(numBytes, num)
+	key := crypto.Keccak256(append(forkBytes, numBytes...))
 
 	// Short circuit if the invalid exit receipts's already in the cache, retrieve otherwise
 	if ierc, ok := bc.invalidExitReceiptsCache.Get(key); ok {
 		return ierc.(map[uint64]*types.Receipt)
 	}
-	ierc := rawdb.ReadInvalidExitReceipts(bc.db, hash, number, fork)
+	ierc := rawdb.ReadInvalidExitReceipts(bc.db, fork, num)
 	if ierc == nil {
 		return nil
 	}
