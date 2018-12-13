@@ -63,22 +63,22 @@ func DeleteTxLookupEntry(db DatabaseDeleter, hash common.Hash) {
 }
 
 // ReadInvalidExitReceiptsLookupEntry retrieves the metadata associated with invalid exit receipts.
-func ReadInvalidExitReceiptsLookupEntry(db DatabaseReader, hash common.Hash, num uint64, fork uint64) (common.Hash, uint64, []uint64) {
-	data, _ := db.Get(invalidExitReceiptsLookupKey(fork, num, hash))
+func ReadInvalidExitReceiptsLookupEntry(db DatabaseReader, fork uint64, num uint64) (common.Hash, uint64, []uint64) {
+	data, _ := db.Get(invalidExitReceiptsLookupKey(fork, num))
 	if len(data) == 0 {
-		return common.Hash{}, 0, nil
+		return common.Hash{}, 0, []uint64{}
 	}
 
 	var entry InvalidExitReceiptsLookupEntry
 	if err := rlp.DecodeBytes(data, &entry); err != nil {
-		log.Error("Invalid invalid exit receipt lookup entry RLP", "hash", hash, "err", err)
-		return common.Hash{}, 0, nil
+		log.Error("Invalid invalid exit receipt lookup entry RLP", "fork number", fork, "block number", num, "err", err)
+		return common.Hash{}, 0, []uint64{}
 	}
 	return entry.BlockHash, entry.BlockIndex, entry.Indices
 }
 
 // WriteInvalidExitReceiptsLookupEntry stores a metadata for invalid exit receipts.
-func WriteInvalidExitReceiptsLookupEntry(db DatabaseWriter, hash common.Hash, num uint64, fork uint64, indices []uint64) {
+func WriteInvalidExitReceiptsLookupEntry(db DatabaseWriter, fork uint64, hash common.Hash, num uint64, indices []uint64) {
 	entry := InvalidExitReceiptsLookupEntry{
 		BlockHash:  hash,
 		BlockIndex: num,
@@ -88,19 +88,19 @@ func WriteInvalidExitReceiptsLookupEntry(db DatabaseWriter, hash common.Hash, nu
 	if err != nil {
 		log.Crit("Failed to encode invalid exit receipt lookup entries", "err", err)
 	}
-	if err := db.Put(invalidExitReceiptsLookupKey(fork, num, hash), data); err != nil {
+	if err := db.Put(invalidExitReceiptsLookupKey(fork, num), data); err != nil {
 		log.Crit("Failed to store transaction lookup entry", "err", err)
 	}
 }
 
 // DeleteInvalidExitReceiptsLookupEntry removes matadata for invalid exit receipts.
-func DeleteInvalidExitReceiptsLookupEntry(db DatabaseDeleter, hash common.Hash, num uint64, fork uint64) {
-	db.Delete(invalidExitReceiptsLookupKey(fork, num, hash))
+func DeleteInvalidExitReceiptsLookupEntry(db DatabaseDeleter, fork uint64, num uint64) {
+	db.Delete(invalidExitReceiptsLookupKey(fork, num))
 }
 
 // ReadInvalidExitReceipts retrieves all the invalid exit receipts.
-func ReadInvalidExitReceipts(db DatabaseReader, hash common.Hash, num uint64, fork uint64) map[uint64]*types.Receipt {
-	blockHash, blockNumber, indices := ReadInvalidExitReceiptsLookupEntry(db, hash, num, fork)
+func ReadInvalidExitReceipts(db DatabaseReader, fork uint64, num uint64) map[uint64]*types.Receipt {
+	blockHash, blockNumber, indices := ReadInvalidExitReceiptsLookupEntry(db, fork, num)
 	if blockHash == (common.Hash{}) {
 		return nil
 	}

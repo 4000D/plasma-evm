@@ -131,8 +131,8 @@ func txLookupKey(hash common.Hash) []byte {
 }
 
 // invalidExitReceiptsLookupKey = invalidExitReceiptsLookupPrefix + fork (uint64 big endian) + num (uint64 big endian) + hash
-func invalidExitReceiptsLookupKey(fork uint64, num uint64, hash common.Hash) []byte {
-	return append(append(append(invalidExitReceiptsLookupPrefix, encodeForkNumber(fork)...), encodeBlockNumber(num)...), hash.Bytes()...)
+func invalidExitReceiptsLookupKey(fork uint64, num uint64) []byte {
+	return append(append(invalidExitReceiptsLookupPrefix, encodeForkNumber(fork)...), encodeBlockNumber(num)...)
 }
 
 // bloomBitsKey = bloomBitsPrefix + bit (uint16 big endian) + section (uint64 big endian) + hash

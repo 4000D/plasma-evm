@@ -78,9 +78,9 @@ func TestInvalidExitReceiptsLookupStorage(t *testing.T) {
 	block := types.NewBlock(&types.Header{Number: big.NewInt(314)}, txs, nil, nil)
 	txIndices := []uint64{0, 2}
 
-	WriteInvalidExitReceiptsLookupEntry(db, block.Hash(), block.NumberU64(), block.CurrentFork(), txIndices)
+	WriteInvalidExitReceiptsLookupEntry(db, block.CurrentFork(), block.Hash(), block.NumberU64(), txIndices)
 
-	hash, num, indices := ReadInvalidExitReceiptsLookupEntry(db, block.Hash(), block.NumberU64(), block.CurrentFork())
+	hash, num, indices := ReadInvalidExitReceiptsLookupEntry(db, block.CurrentFork(), block.NumberU64())
 	if hash != block.Hash() || num != block.NumberU64() || len(indices) == 0 {
 		t.Fatalf("invalid exit receipt lookup entries mismatch")
 		for i, v := range indices {
@@ -90,8 +90,8 @@ func TestInvalidExitReceiptsLookupStorage(t *testing.T) {
 		}
 	}
 
-	DeleteInvalidExitReceiptsLookupEntry(db, block.Hash(), block.NumberU64(), block.CurrentFork())
-	_, _, indices = ReadInvalidExitReceiptsLookupEntry(db, block.Hash(), block.NumberU64(), block.CurrentFork())
+	DeleteInvalidExitReceiptsLookupEntry(db, block.CurrentFork(), block.NumberU64())
+	_, _, indices = ReadInvalidExitReceiptsLookupEntry(db, block.CurrentFork(), block.NumberU64())
 	if len(indices) != 0 {
 		t.Fatalf("invalid exit receipt indices exist")
 	}
@@ -100,6 +100,9 @@ func TestInvalidExitReceiptsLookupStorage(t *testing.T) {
 func TestBlockInvalidExitReceiptsStorage(t *testing.T) {
 	db := ethdb.NewMemDatabase()
 
+	fork := uint64(1)
+	num := uint64(2)
+	hash := common.BytesToHash([]byte{0x01, 0x15})
 	receipt1 := &types.Receipt{
 		Status:            types.ReceiptStatusFailed,
 		CumulativeGasUsed: 1,
@@ -134,12 +137,10 @@ func TestBlockInvalidExitReceiptsStorage(t *testing.T) {
 	}
 	receipts := []*types.Receipt{receipt1, receipt2, receipt3}
 
-	hash := common.BytesToHash([]byte{0x01, 0x15})
+	WriteReceipts(db, hash, num, receipts)
+	WriteInvalidExitReceiptsLookupEntry(db, fork, hash, num, []uint64{0, 2})
 
-	WriteReceipts(db, hash, 1, receipts)
-	WriteInvalidExitReceiptsLookupEntry(db, hash, 1, 1, []uint64{0, 2})
-
-	iers := ReadInvalidExitReceipts(db, hash, 1, 1)
+	iers := ReadInvalidExitReceipts(db, fork, num)
 	if iers == nil || len(iers) != 2 {
 		t.Fatalf("invalid invalid exit receipts returned")
 	} else {
