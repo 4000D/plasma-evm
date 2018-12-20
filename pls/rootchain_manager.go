@@ -59,9 +59,6 @@ type RootChainManager struct {
 	miner *miner.Miner
 	env   *miner.EpochEnvironment
 
-	// fork => block number => invalidExits
-	invalidExits map[uint64]map[uint64]invalidExits
-
 	contractParams *rootchainParameters
 
 	// channels
@@ -101,7 +98,6 @@ func NewRootChainManager(
 		accountManager:    accountManager,
 		miner:             miner,
 		env:               env,
-		invalidExits:      make(map[uint64]map[uint64]invalidExits),
 		contractParams:    newRootchainParameters(rootchainContract, backend),
 		quit:              make(chan struct{}),
 		epochPreparedCh:   make(chan *rootchain.RootChainEpochPrepared, MAX_EPOCH_EVENTS),
@@ -484,23 +480,29 @@ func (rcm *RootChainManager) handleBlockFinalzied(ev *rootchain.RootChainBlockFi
 	}
 
 	if block.IsRequest {
-		invalidExits := rcm.invalidExits[e.ForkNumber.Uint64()][e.BlockNumber.Uint64()]
-		for i := 0; i < len(invalidExits); i++ {
+		fork := e.ForkNumber.Uint64()
+		num := e.BlockNumber.Uint64()
+		hash := rcm.blockchain.GetBlockByNumber(num).Hash()
+		receipts := rcm.blockchain.GetReceiptsByHash(hash)
+		ierc := rcm.blockchain.GetInvalidExitReceipts(fork, num)
 
-			var proofs []byte
-			for j := 0; j < len(invalidExits[i].proof); j++ {
-				proof := invalidExits[i].proof[j].Bytes()
-				proofs = append(proofs, proof...)
+		var proofs []byte
+
+		for index, receipt := range ierc {
+			proof := types.GetMerkleProof(receipts, int(index))
+			for j := 0; j < len(proof); j++ {
+				bytesOfproof := proof[j].Bytes()
+				proofs = append(proofs, bytesOfproof...)
 			}
+
 			// TODO: ChallengeExit receipt check
-			input, err := rootchainContractABI.Pack("challengeExit", e.ForkNumber, e.BlockNumber, big.NewInt(invalidExits[i].index), invalidExits[i].receipt.GetRlp(), proofs)
+			input, err := rootchainContractABI.Pack("challengeExit", e.ForkNumber, e.BlockNumber, big.NewInt(int64(index)), receipt.GetRlp(), proofs)
 			if err != nil {
 				log.Error("Failed to pack challengeExit", "error", err)
 			}
 
-			Nonce := rcm.contractParams.getNonce(rcm.backend)
-			challengeTx := types.NewTransaction(Nonce, rcm.config.RootChainContract, big.NewInt(0), params.SubmitBlockGasLimit, params.SubmitBlockGasPrice, input)
-
+			nonce := rcm.contractParams.getNonce(rcm.backend)
+			challengeTx := types.NewTransaction(nonce, rcm.config.RootChainContract, big.NewInt(0), params.SubmitBlockGasLimit, params.SubmitBlockGasPrice, input)
 			signedTx, err := w.SignTx(rcm.config.Operator, challengeTx, rootchainNetworkId)
 			if err != nil {
 				log.Error("Failed to sign challengeTx", "err", err)
@@ -510,7 +512,7 @@ func (rcm *RootChainManager) handleBlockFinalzied(ev *rootchain.RootChainBlockFi
 			if err != nil {
 				log.Error("Failed to send challengeTx", "err", err)
 			} else {
-				log.Info("challengeExit is submitted", "exit request number", invalidExits[i].index, "hash", signedTx.Hash().Hex())
+				log.Info("challengeExit is submitted", "exit request number", index, "hash", signedTx.Hash().Hex())
 			}
 		}
 	}
@@ -538,38 +540,27 @@ func (rcm *RootChainManager) runDetector() {
 		select {
 		case ev := <-events.Chan():
 			rcm.lock.Lock()
-			if rcm.env.IsRequest {
-				var invalidExitsList invalidExits
 
+			if rcm.env.IsRequest {
 				forkNumber, err := caller.CurrentFork(callerOpts)
+
 				if err != nil {
 					log.Warn("failed to get current fork number", "error", err)
 				}
 
-				if rcm.invalidExits[forkNumber.Uint64()] == nil {
-					rcm.invalidExits[forkNumber.Uint64()] = make(map[uint64]invalidExits)
-				}
-
-				blockInfo := ev.Data.(core.NewMinedBlockEvent)
-				blockNumber := blockInfo.Block.Number()
-				receipts := rcm.blockchain.GetReceiptsByHash(blockInfo.Block.Hash())
+				block := ev.Data.(core.NewMinedBlockEvent).Block
+				receipts := rcm.blockchain.GetReceiptsByHash(block.Hash())
 
 				// TODO: should check if the request[i] is enter or exit request. Undo request will make posterior enter request.
+				// receipt index related invalid exit in a block
+				var indices []uint64
 				for i := 0; i < len(receipts); i++ {
 					if receipts[i].Status == types.ReceiptStatusFailed {
-						invalidExit := &invalidExit{
-							forkNumber:  forkNumber,
-							blockNumber: blockNumber,
-							receipt:     receipts[i],
-							index:       int64(i),
-							proof:       types.GetMerkleProof(receipts, i),
-						}
-						invalidExitsList = append(invalidExitsList, invalidExit)
-
-						log.Info("Invalid Exit Detected", "invalidExit", invalidExit, "forkNumber", forkNumber, "blockNumber", blockNumber)
+						indices = append(indices, uint64(i))
+						log.Info("invalid exit detected", "fork number", block.CurrentFork(), "fork number", forkNumber, "block number", block.Number)
 					}
 				}
-				rcm.invalidExits[forkNumber.Uint64()][blockNumber.Uint64()] = invalidExitsList
+				rcm.blockchain.SetInvalidExitReceipts(block.CurrentFork(), block.Hash(), block.NumberU64(), indices)
 			}
 			rcm.lock.Unlock()
 

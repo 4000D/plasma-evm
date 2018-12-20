@@ -321,6 +321,11 @@ func (bc *BlockChain) SetHead(head uint64) error {
 	return bc.loadLastState()
 }
 
+// SetInvalidExitReceipts uses to save invalid exit receipts lookup data.
+func (bc *BlockChain) SetInvalidExitReceipts(fork uint64, hash common.Hash, num uint64, indices []uint64) {
+	rawdb.WriteInvalidExitReceiptsLookupEntry(bc.db, fork, hash, num, indices)
+}
+
 // FastSyncCommitHead sets the current head block to the one defined by the hash
 // irrelevant what the chain contents were prior.
 func (bc *BlockChain) FastSyncCommitHead(hash common.Hash) error {
