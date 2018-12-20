@@ -557,7 +557,7 @@ func (rcm *RootChainManager) runDetector() {
 				for i := 0; i < len(receipts); i++ {
 					if receipts[i].Status == types.ReceiptStatusFailed {
 						indices = append(indices, uint64(i))
-						log.Info("invalid exit detected", "fork number", block.CurrentFork(), "fork number", forkNumber, "block number", block.Number)
+						log.Info("invalid exit detected", "fork number", forkNumber, "block number", block.Number, "receipt index", i)
 					}
 				}
 				rcm.blockchain.SetInvalidExitReceipts(block.CurrentFork(), block.Hash(), block.NumberU64(), indices)
