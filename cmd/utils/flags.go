@@ -843,19 +843,24 @@ var (
 	}
 
 	// Stamina Flags
+	StaminaOperatorAmountFlag = BigFlag{
+		Name:  "stamina.operatoramount",
+		Usage: fmt.Sprintf("Operator stamina amount in genesis block (default=%s)", pls.DefaultConfig.StaminaConfig.MinDeposit.String()),
+		Value: pls.DefaultConfig.StaminaConfig.MinDeposit,
+	}
 	StaminaMinDepositFlag = BigFlag{
 		Name:  "stamina.mindeposit",
-		Usage: "MinDeposit variable state of stamina contract",
+		Usage: fmt.Sprintf("Minimum deposit amount of ETH (default=%s)", pls.DefaultConfig.StaminaConfig.MinDeposit.String()),
 		Value: pls.DefaultConfig.StaminaConfig.MinDeposit,
 	}
 	StaminaRecoverEpochLengthFlag = BigFlag{
 		Name:  "stamina.recoverepochlength",
-		Usage: "RecoverEpochLength variable state of stamina contract",
+		Usage: fmt.Sprintf("The length of recovery epoch (default=%s)", pls.DefaultConfig.StaminaConfig.RecoverEpochLength.String()),
 		Value: pls.DefaultConfig.StaminaConfig.RecoverEpochLength,
 	}
 	StaminaWithdrawalDelayFlag = BigFlag{
 		Name:  "stamina.withdrawaldelay",
-		Usage: "WithdrawalDelay variable state of stamina contract",
+		Usage: fmt.Sprintf("WithdrawalDelay variable state of stamina contract (default=%s)", pls.DefaultConfig.StaminaConfig.WithdrawalDelay.String()),
 		Value: pls.DefaultConfig.StaminaConfig.WithdrawalDelay,
 	}
 
@@ -1772,15 +1777,22 @@ func SetPlsConfig(ctx *cli.Context, stack *node.Node, cfg *pls.Config) {
 		cfg.RootChainContract = common.HexToAddress(ctx.GlobalString(RootChainContractFlag.Name))
 	}
 
+	if ctx.GlobalIsSet(StaminaOperatorAmountFlag.Name) {
+		cfg.StaminaConfig.OperatorAmount = GlobalBig(ctx, StaminaOperatorAmountFlag.Name)
+	}
+
 	if ctx.GlobalIsSet(StaminaMinDepositFlag.Name) {
 		cfg.StaminaConfig.MinDeposit = GlobalBig(ctx, StaminaMinDepositFlag.Name)
 	}
+
 	if ctx.GlobalIsSet(StaminaRecoverEpochLengthFlag.Name) {
 		cfg.StaminaConfig.RecoverEpochLength = GlobalBig(ctx, StaminaRecoverEpochLengthFlag.Name)
 	}
+
 	if ctx.GlobalIsSet(StaminaWithdrawalDelayFlag.Name) {
 		cfg.StaminaConfig.WithdrawalDelay = GlobalBig(ctx, StaminaWithdrawalDelayFlag.Name)
 	}
+
 	if new(big.Int).Mul(cfg.StaminaConfig.RecoverEpochLength, big.NewInt(2)).Cmp(cfg.StaminaConfig.WithdrawalDelay) >= 0 {
 		Fatalf("Expected withdrawal delay to be more than %v recovery epoch length by two times, but is %v", cfg.StaminaConfig.RecoverEpochLength, cfg.StaminaConfig.WithdrawalDelay)
 	}
@@ -2006,7 +2018,7 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 	operator := common.Address{1}
 	chainDb = MakeChainDatabase(ctx, stack)
 	rootChainContract := common.HexToAddress(ctx.GlobalString(RootChainContractFlag.Name))
-	staminaConfig := core.DefaultStaminaConfig
+	staminaConfig := params.DefaultStaminaConfig
 	config, _, err := core.SetupGenesisBlock(chainDb, MakeGenesis(ctx), rootChainContract, operator, staminaConfig, stack.InstanceDir())
 	if err != nil {
 		Fatalf("%v", err)

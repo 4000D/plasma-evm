@@ -154,12 +154,12 @@ func (e *GenesisMismatchError) Error() string {
 // error is a *params.ConfigCompatError and the new, unwritten config is returned.
 //
 // The returned chain configuration is never nil.
-func SetupGenesisBlock(db ethdb.Database, genesis *Genesis, rootChainContract common.Address, operator common.Address, staminaConfig *StaminaConfig, instanceDir string) (*params.ChainConfig, common.Hash, error) {
+func SetupGenesisBlock(db ethdb.Database, genesis *Genesis, rootChainContract common.Address, operator common.Address, staminaConfig *params.StaminaConfig, instanceDir string) (*params.ChainConfig, common.Hash, error) {
 	return SetupGenesisBlockWithOverride(db, genesis, rootChainContract, operator, staminaConfig, instanceDir, nil, nil)
 }
 
 func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, rootChainContract common.Address,
-	operator common.Address, staminaConfig *StaminaConfig, instanceDir string, overrideIstanbul, overrideMuirGlacier *big.Int) (*params.ChainConfig, common.Hash, error) {
+	operator common.Address, staminaConfig *params.StaminaConfig, instanceDir string, overrideIstanbul, overrideMuirGlacier *big.Int) (*params.ChainConfig, common.Hash, error) {
 	if genesis != nil && genesis.Config == nil {
 		return params.AllEthashProtocolChanges, common.Hash{}, errGenesisNoConfig
 	}
@@ -366,14 +366,14 @@ func GenesisBlockForTesting(db ethdb.Database, addr common.Address, balance *big
 }
 
 // DefaultGenesisBlock returns the Plasma main net genesis block.
-func DefaultGenesisBlock(rootChainContract common.Address, operator common.Address, staminaConfig *StaminaConfig) *Genesis {
-	staminaBinBytes, err := hex.DecodeString(StaminaContractDeployedBin[2:])
+func DefaultGenesisBlock(rootChainContract common.Address, operator common.Address, staminaConfig *params.StaminaConfig) *Genesis {
+	staminaBinBytes, err := hex.DecodeString(params.StaminaContractDeployedBin[2:])
 	if err != nil {
 		panic(err)
 	}
 	initialized := common.BoolToBytes(staminaConfig.Initialized)
-	StaminaKey := GetStaminaKey(operator)
-	OperatorAsDelegatorKey := GetOperatorAsDelegatorKey(operator)
+	StaminaKey := params.GetStaminaKey(operator)
+	OperatorAsDelegatorKey := params.GetOperatorAsDelegatorKey(operator)
 	return &Genesis{
 		Config:     params.MainnetChainConfig,
 		ExtraData:  rootChainContract.Bytes(),
@@ -388,16 +388,16 @@ func DefaultGenesisBlock(rootChainContract common.Address, operator common.Addre
 			common.BytesToAddress([]byte{6}): {Balance: big.NewInt(1)}, // ECAdd
 			common.BytesToAddress([]byte{7}): {Balance: big.NewInt(1)}, // ECScalarMul
 			common.BytesToAddress([]byte{8}): {Balance: big.NewInt(1)}, // ECPairing
-			StaminaContractAddress: {
+			params.StaminaAddress: {
 				Code:    staminaBinBytes,
 				Balance: big.NewInt(0),
 				Storage: map[common.Hash]common.Hash{
-					InitializedKey:         common.BytesToHash(initialized),
-					MinDepositKey:          common.HexToHash(hexutil.EncodeBig(staminaConfig.MinDeposit)),
-					RecoverEpochLengthKey:  common.HexToHash(hexutil.EncodeBig(staminaConfig.RecoverEpochLength)),
-					WithdrawalDelayKey:     common.HexToHash(hexutil.EncodeBig(staminaConfig.WithdrawalDelay)),
-					StaminaKey:             common.HexToHash(hexutil.EncodeBig(DefaultStamina)),
-					OperatorAsDelegatorKey: operator.Hash(),
+					params.StaminaInitializedKey:        common.BytesToHash(initialized),
+					params.StaminaMinDepositKey:         common.HexToHash(hexutil.EncodeBig(staminaConfig.MinDeposit)),
+					params.StaminaRecoverEpochLengthKey: common.HexToHash(hexutil.EncodeBig(staminaConfig.RecoverEpochLength)),
+					params.StaminaWithdrawalDelayKey:    common.HexToHash(hexutil.EncodeBig(staminaConfig.WithdrawalDelay)),
+					StaminaKey:                          common.HexToHash(hexutil.EncodeBig(params.DefaultStamina)),
+					OperatorAsDelegatorKey:              operator.Hash(),
 				},
 			},
 		},
@@ -429,14 +429,14 @@ func DefaultRinkebyGenesisBlock() *Genesis {
 }
 
 // DeveloperGenesisBlock returns the Plasma genesis block
-func DeveloperGenesisBlock(period uint64, rootChainContract common.Address, operator common.Address, staminaConfig *StaminaConfig) *Genesis {
-	staminaBinBytes, err := hex.DecodeString(StaminaContractDeployedBin[2:])
+func DeveloperGenesisBlock(period uint64, rootChainContract common.Address, operator common.Address, staminaConfig *params.StaminaConfig) *Genesis {
+	staminaBinBytes, err := hex.DecodeString(params.StaminaContractDeployedBin[2:])
 	if err != nil {
 		panic(err)
 	}
 	initialized := common.BoolToBytes(staminaConfig.Initialized)
-	StaminaKey := GetStaminaKey(operator)
-	OperatorAsDelegatorKey := GetOperatorAsDelegatorKey(operator)
+	operatorStaminaKey := params.GetStaminaKey(operator)
+	operatorAsDelegatorKey := params.GetOperatorAsDelegatorKey(operator)
 
 	return &Genesis{
 		Config:     params.MainnetChainConfig,
@@ -453,16 +453,16 @@ func DeveloperGenesisBlock(period uint64, rootChainContract common.Address, oper
 			common.BytesToAddress([]byte{6}): {Balance: big.NewInt(1)}, // ECAdd
 			common.BytesToAddress([]byte{7}): {Balance: big.NewInt(1)}, // ECScalarMul
 			common.BytesToAddress([]byte{8}): {Balance: big.NewInt(1)}, // ECPairing
-			StaminaContractAddress: {
+			params.StaminaAddress: {
 				Code:    staminaBinBytes,
 				Balance: big.NewInt(0),
 				Storage: map[common.Hash]common.Hash{
-					InitializedKey:         common.BytesToHash(initialized),
-					MinDepositKey:          common.HexToHash(hexutil.EncodeBig(staminaConfig.MinDeposit)),
-					RecoverEpochLengthKey:  common.HexToHash(hexutil.EncodeBig(staminaConfig.RecoverEpochLength)),
-					WithdrawalDelayKey:     common.HexToHash(hexutil.EncodeBig(staminaConfig.WithdrawalDelay)),
-					StaminaKey:             common.HexToHash(hexutil.EncodeBig(DefaultStamina)),
-					OperatorAsDelegatorKey: operator.Hash(),
+					params.StaminaInitializedKey:        common.BytesToHash(initialized),
+					params.StaminaMinDepositKey:         common.HexToHash(hexutil.EncodeBig(staminaConfig.MinDeposit)),
+					params.StaminaRecoverEpochLengthKey: common.HexToHash(hexutil.EncodeBig(staminaConfig.RecoverEpochLength)),
+					params.StaminaWithdrawalDelayKey:    common.HexToHash(hexutil.EncodeBig(staminaConfig.WithdrawalDelay)),
+					operatorStaminaKey:                  common.HexToHash(hexutil.EncodeBig(params.DefaultStamina)),
+					operatorAsDelegatorKey:              operator.Hash(),
 				},
 			},
 			operator: {Balance: new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9))},

@@ -63,7 +63,6 @@ func (w *wizard) deployNode(boot bool) {
 	infos.rootchainURL = w.readURL().String()
 
 	// Figure out whether expose JSONRPC or not
-
 	fmt.Println()
 	fmt.Printf("Do you want expose HTTP JSONRPC endpoint (y/n)? (default=no)\n")
 	if w.readDefaultYesNo(false) {

@@ -17,7 +17,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -32,14 +31,16 @@ import (
 	"time"
 
 	"github.com/Onther-Tech/plasma-evm/accounts/abi/bind"
+	"github.com/Onther-Tech/plasma-evm/accounts/keystore"
 	"github.com/Onther-Tech/plasma-evm/cmd/utils"
 	"github.com/Onther-Tech/plasma-evm/common"
 	"github.com/Onther-Tech/plasma-evm/common/hexutil"
-	"github.com/Onther-Tech/plasma-evm/contracts/plasma/rootchain"
+	"github.com/Onther-Tech/plasma-evm/contracts/plasma"
 	"github.com/Onther-Tech/plasma-evm/core"
 	"github.com/Onther-Tech/plasma-evm/ethclient"
 	"github.com/Onther-Tech/plasma-evm/log"
 	"github.com/Onther-Tech/plasma-evm/params"
+	"github.com/Onther-Tech/plasma-evm/pls"
 )
 
 // TODO: deploy RootChain contract and make genesis
@@ -48,8 +49,8 @@ func (w *wizard) makeGenesis() {
 	// Construct a default genesis block
 	genesis := &core.Genesis{
 		Timestamp:  uint64(time.Now().Unix()),
-		GasLimit:   4700000,
-		Difficulty: big.NewInt(524288),
+		GasLimit:   100000000,
+		Difficulty: big.NewInt(1),
 		Alloc:      make(core.GenesisAlloc),
 		Config: &params.ChainConfig{
 			HomesteadBlock:      big.NewInt(0),
@@ -64,150 +65,137 @@ func (w *wizard) makeGenesis() {
 	}
 	var operator common.Address
 
-	// Figure out which consensus engine to choose
+	genesis.Config.Ethash = new(params.EthashConfig)
+	genesis.ExtraData = make([]byte, 20)
+	genesis.Difficulty = big.NewInt(1)
+
+	// Figure out which URL to listen for root chain JSONRPC endpoint
 	fmt.Println()
-	fmt.Println("Which consensus engine to use? (default = clique)")
-	fmt.Println(" 1. Ethash - proof-of-work")
-	fmt.Println(" 2. Clique - proof-of-authority")
-
-	choice := w.read()
-	switch {
-	case choice == "1":
-		// In case of ethash, we're pretty much done
-		genesis.Config.Ethash = new(params.EthashConfig)
-		genesis.ExtraData = make([]byte, 20)
-		genesis.Difficulty = big.NewInt(1)
-
-		fmt.Println()
-		fmt.Println("What is the rootchain URL?")
-		rootchainBackend, err := ethclient.Dial(w.readString())
-		if err != nil {
-			utils.Fatalf("Failed to connect rootchain: %v", err)
-		}
-
-		// TODO: get `geth deploy` parameters and run
-
-		// TODO: deprecate below query
-		// Query for the rootchain contract
-		fmt.Println()
-		fmt.Println("What is the rootchain contract address?")
-		var rootchainAddress common.Address
-		if address := w.readAddress(); address != nil {
-			rootchainAddress = *address
-		}
-		genesis.ExtraData = rootchainAddress.Bytes()
-
-		rootchainContract, err := rootchain.NewRootChain(rootchainAddress, rootchainBackend)
-		if err != nil {
-			utils.Fatalf("Failed to get rootchain contract: %v", err)
-		}
-		operator, err = rootchainContract.Operator(&bind.CallOpts{Pending: false, Context: context.Background()})
-		if err != nil {
-			utils.Fatalf("Failed to get operator address: %v", err)
-		}
-
-	case choice == "" || choice == "2":
-		// In the case of clique, configure the consensus parameters
-		genesis.Difficulty = big.NewInt(1)
-		genesis.Config.Clique = &params.CliqueConfig{
-			Period: 15,
-			Epoch:  30000,
-		}
-		fmt.Println()
-		fmt.Println("How many seconds should blocks take? (default = 15)")
-		genesis.Config.Clique.Period = uint64(w.readDefaultInt(15))
-
-		// We also need the initial list of signers
-		fmt.Println()
-		fmt.Println("Which accounts are allowed to seal? (mandatory at least one)")
-
-		var signers []common.Address
-		for {
-			if address := w.readAddress(); address != nil {
-				signers = append(signers, *address)
-				continue
-			}
-			if len(signers) > 0 {
-				break
-			}
-		}
-		// Sort the signers and embed into the extra-data section
-		for i := 0; i < len(signers); i++ {
-			for j := i + 1; j < len(signers); j++ {
-				if bytes.Compare(signers[i][:], signers[j][:]) > 0 {
-					signers[i], signers[j] = signers[j], signers[i]
-				}
-			}
-		}
-		genesis.ExtraData = make([]byte, 32+len(signers)*common.AddressLength+65)
-		for i, signer := range signers {
-			copy(genesis.ExtraData[32+i*common.AddressLength:], signer[:])
-		}
-
-	default:
-		log.Crit("Invalid consensus engine choice", "choice", choice)
+	fmt.Printf("What URL to listen on root chain JSONRPC?\n")
+	rootchainBackend, err := ethclient.Dial(w.readString())
+	if err != nil {
+		utils.Fatalf("Failed to connect rootchain: %v", err)
 	}
+
+	s, err := rootchainBackend.SyncProgress(context.Background())
+	if err != nil {
+		utils.Fatalf("Failed to check root chain client syncing: %v", err)
+	}
+
+	if s != nil {
+		fmt.Println()
+		fmt.Printf("Syncing is not fihished: (highest block= %d, current block=%d, diff=%d)\n", s.HighestBlock, s.CurrentBlock, s.HighestBlock-s.CurrentBlock)
+		fmt.Println("Do you want to proceed (y/n)? (default=no)")
+		if !w.readDefaultYesNo(false) {
+			return
+		}
+	}
+
+	// Figure out operator account info
+	fmt.Println()
+	fmt.Println("Please paste the operator's key JSON:")
+	operatorKeyJSON := w.readJSON()
+
+	fmt.Println()
+	fmt.Println("What's the unlock password for the account? (won't be echoed)")
+	operatorKeyPass := w.readPassword()
+
+	k, err := keystore.DecryptKey([]byte(operatorKeyJSON), operatorKeyPass)
+	if err != nil {
+		log.Error("Failed to decrypt key with given passphrase")
+		return
+	}
+
+	opts := bind.NewKeyedTransactor(k.PrivateKey)
+
+	// 1. Setup genesis
+	cfg := pls.DefaultConfig
+
+	var (
+		withPETH  = true
+		devFlag   = true
+		NRELength = 128
+	)
+
+	// Figure out whether operator has PETH in genesis block.
+	fmt.Println()
+	fmt.Printf("Do you want to give PETH to operator in genesis block (y/n)? (default=%t)\n", withPETH)
+	withPETH = w.readDefaultYesNo(withPETH)
+
+	// Figure out whether RootChain contract is in development mode or not
+	fmt.Println()
+	fmt.Printf("Do you want to deploy RootChain contract in development mode or not (y/n)? (default=%t)\n", devFlag)
+	devFlag = w.readDefaultYesNo(devFlag)
+
+	// Figure out the length of NRE epoch
+	fmt.Println()
+	fmt.Printf("Specify the length of NRE epoch (default=%d)\n", NRELength)
+	NRELength = w.readDefaultInt(NRELength)
+
+	plasma.DeployPlasmaContracts(opts, rootchainBackend, &cfg, withPETH, devFlag, big.NewInt(int64(NRELength)))
 
 	// TODO: add root chain deployment parameters
 
-	var (
-		stamina             int64
-		minDeposit          int64
-		recoveryEpochLength int64
-		withdrawalDelay     int64
-	)
+	// stamina default config
+	operatorStamina := 10.0
+	minDeposit := float64(cfg.StaminaConfig.MinDeposit.Int64())
+	recoveryEpochLength := cfg.StaminaConfig.RecoverEpochLength.Uint64()
+	withdrawalDelay := cfg.StaminaConfig.WithdrawalDelay.Uint64()
 
+	// Figure out operator's stamina in PETH
 	fmt.Println()
-	fmt.Println("Specify your default stamina amount")
-	stamina = int64(w.readInt())
+	fmt.Printf("Specify operator's stamina in PETH (default=%0.3f. PETH)\n", operatorStamina)
+	operatorStamina = w.readDefaultFloat(operatorStamina)
 
+	// Figure out minimum deposit amount
+	fmt.Println()
+	fmt.Printf("Specify minimum deposit amount in PETH (default=%0.3f PETH)\n", minDeposit)
+	minDeposit = w.readDefaultFloat(minDeposit)
+
+	if minDeposit <= 0.0 {
+		log.Error("Must be greater than 0")
+		return
+	}
+
+	// Figure out the length of recovery epoch
+	fmt.Println()
+	fmt.Printf("Specify the length of recovery epoch (default=%d) (help: stamina will be recovered up to deposited PETH for each recovery epoch)\n", recoveryEpochLength)
+	recoveryEpochLength = w.readDefaultBigInt(big.NewInt(int64(recoveryEpochLength))).Uint64()
+
+	if recoveryEpochLength == 0 {
+		log.Error("Must be greater than 0")
+		return
+	}
+
+	// Figure out stamina withdrawal delay
 	for {
 		fmt.Println()
-		fmt.Println("Specify your minimum deposit amount")
-		minDeposit = int64(w.readInt())
-		if minDeposit <= 0 {
+		fmt.Printf("Specify delay duration for withdrawal (must greater than recovery epoch * 2) (default=%d)\n", withdrawalDelay)
+		withdrawalDelay = w.readDefaultBigInt(big.NewInt(int64(withdrawalDelay))).Uint64()
+
+		if withdrawalDelay == 0 {
 			log.Error("Must be greater than 0")
 			continue
 		}
-		break
-	}
 
-	for {
-		fmt.Println()
-		fmt.Println("Specify epoch length for stamina recovery")
-		recoveryEpochLength = int64(w.readInt())
-		if recoveryEpochLength <= 0 {
-			log.Error("Must be greater than 0")
-			continue
-		}
-		break
-	}
-
-	for {
-		fmt.Println()
-		fmt.Println("Specify delay duration for withdrawal (must greater than recovery epoch * 2)")
-		withdrawalDelay = int64(w.readInt())
-		if withdrawalDelay <= 0 {
-			log.Error("Must be greater than 0")
-			continue
-		} else if recoveryEpochLength*2 >= withdrawalDelay {
+		if recoveryEpochLength*2 >= withdrawalDelay {
 			log.Error("Must be greater than recovery epoch length * 2")
 			continue
 		}
 		break
 	}
 
-	staminaKey := core.GetStaminaKey(operator)
-	staminaBinBytes, _ := hex.DecodeString(core.StaminaContractDeployedBin[2:])
-	genesis.Alloc[core.StaminaContractAddress] = core.GenesisAccount{
+	staminaKey := params.GetStaminaKey(operator)
+	staminaBinBytes, _ := hex.DecodeString(params.StaminaContractDeployedBin[2:])
+	genesis.Alloc[params.StaminaAddress] = core.GenesisAccount{
 		Code:    staminaBinBytes,
 		Balance: big.NewInt(0),
 		Storage: map[common.Hash]common.Hash{
-			core.InitializedKey:        common.BytesToHash([]byte{1}),
-			core.MinDepositKey:         common.HexToHash(hexutil.EncodeBig(big.NewInt(minDeposit))),
-			core.RecoverEpochLengthKey: common.HexToHash(hexutil.EncodeBig(big.NewInt(recoveryEpochLength))),
-			core.WithdrawalDelayKey:    common.HexToHash(hexutil.EncodeBig(big.NewInt(withdrawalDelay))),
-			staminaKey:                 common.HexToHash(hexutil.EncodeBig(big.NewInt(stamina))),
+			staminaKey:                          common.HexToHash(hexutil.EncodeBig(big.NewInt(int64(operatorStamina)))),
+			params.StaminaInitializedKey:        common.BytesToHash([]byte{1}),
+			params.StaminaMinDepositKey:         common.HexToHash(hexutil.EncodeBig(big.NewInt(int64(minDeposit)))),
+			params.StaminaRecoverEpochLengthKey: common.HexToHash(hexutil.EncodeBig(big.NewInt(int64(recoveryEpochLength)))),
+			params.StaminaWithdrawalDelayKey:    common.HexToHash(hexutil.EncodeBig(big.NewInt(int64(withdrawalDelay)))),
 		},
 	}
 

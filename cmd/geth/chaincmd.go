@@ -82,6 +82,7 @@ It expects the genesis file as argument.`,
 			utils.OperatorKeyFlag,
 			utils.OperatorPasswordFileFlag,
 			utils.DeveloperKeyFlag,
+			utils.StaminaOperatorAmountFlag,
 			utils.StaminaMinDepositFlag,
 			utils.StaminaRecoverEpochLengthFlag,
 			utils.StaminaWithdrawalDelayFlag,
@@ -89,6 +90,9 @@ It expects the genesis file as argument.`,
 		Category: "BLOCKCHAIN COMMANDS",
 		Description: `
 The deploy command deploy RootChain contract and make new genesis file.
+
+To specify stamina, use --stamina.operator, --stamina.mindeposit,
+--stamina.recoverepochlength, and --stamina.withdrawaldelay flags
 
 It expects arguments as below:
  - genesisPath: path to write genesis.json
@@ -300,15 +304,15 @@ func initGenesis(ctx *cli.Context) error {
 		utils.Fatalf("Failed to get operator address: %v", err)
 	}
 
-	var staminaConfig *core.StaminaConfig
+	var staminaConfig *params.StaminaConfig
 
 	for address, account := range genesis.Alloc {
-		if address == core.StaminaContractAddress {
-			staminaConfig = &core.StaminaConfig{
+		if address == params.StaminaAddress {
+			staminaConfig = &params.StaminaConfig{
 				Initialized:        true,
-				MinDeposit:         account.Storage[core.MinDepositKey].Big(),
-				RecoverEpochLength: account.Storage[core.RecoverEpochLengthKey].Big(),
-				WithdrawalDelay:    account.Storage[core.WithdrawalDelayKey].Big(),
+				MinDeposit:         account.Storage[params.StaminaMinDepositKey].Big(),
+				RecoverEpochLength: account.Storage[params.StaminaRecoverEpochLengthKey].Big(),
+				WithdrawalDelay:    account.Storage[params.StaminaWithdrawalDelayKey].Big(),
 			}
 			break
 		}
@@ -381,16 +385,9 @@ func deployRootChain(ctx *cli.Context) error {
 		utils.Fatalf("Failed to connect rootchain: %v", err)
 	}
 
-	rootchainContract, err := plasma.DeployPlasmaContracts(opt, backend, &cfg.Pls, withPETH, development, NRELength)
+	rootchainContract, genesis, err := plasma.DeployPlasmaContracts(opt, backend, &cfg.Pls, withPETH, development, NRELength)
 	if err != nil {
 		utils.Fatalf("Failed to deploy contracts %v", err)
-	}
-
-	var genesis *core.Genesis
-	if withPETH {
-		genesis = core.DeveloperGenesisBlock(uint64(ctx.GlobalInt(utils.DeveloperPeriodFlag.Name)), rootchainContract, cfg.Pls.Operator.Address, cfg.Pls.StaminaConfig)
-	} else {
-		genesis = core.DefaultGenesisBlock(rootchainContract, cfg.Pls.Operator.Address, cfg.Pls.StaminaConfig)
 	}
 
 	genesis.Config.ChainID = big.NewInt(int64(chainId))
