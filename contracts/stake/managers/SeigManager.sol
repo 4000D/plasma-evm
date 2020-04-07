@@ -18,6 +18,7 @@ import { SeigManagerI } from "../interfaces/SeigManagerI.sol";
 import { RootChainRegistryI } from "../interfaces/RootChainRegistryI.sol";
 import { DepositManagerI } from "../interfaces/DepositManagerI.sol";
 import { PowerTONI } from "../interfaces/PowerTONI.sol";
+import { GovI } from "../interfaces/GovI.sol";
 
 
 
@@ -61,6 +62,7 @@ contract SeigManager is SeigManagerI, DSMath, Ownable, Pausable, AuthController 
   RootChainRegistryI internal _registry;
   DepositManagerI internal _depositManager;
   PowerTONI internal _powerton;
+  GovI internal _gov;
 
   //////////////////////////////
   // Token-related
@@ -152,12 +154,15 @@ contract SeigManager is SeigManagerI, DSMath, Ownable, Pausable, AuthController 
     ERC20Mintable wton,
     RootChainRegistryI registry,
     DepositManagerI depositManager,
+    GovI gov,
     uint256 seigPerBlock
   ) public {
     _ton = ton;
     _wton = wton;
     _registry = registry;
     _depositManager = depositManager;
+    _gov = gov;
+
     _seigPerBlock = seigPerBlock;
 
     _tot = new CustomIncrementCoinage(
@@ -257,6 +262,8 @@ contract SeigManager is SeigManagerI, DSMath, Ownable, Pausable, AuthController 
     if (paused()) {
       return true;
     }
+
+    // short circuit if
 
     _increaseTot();
 
